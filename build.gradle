@@ -1,0 +1,23 @@
+plugins {
+    id 'java'
+}
+
+group = 'ua.cn.stu'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'mysql:mysql-connector-java:8.0.33'
+    implementation 'org.springframework:spring-jdbc:5.3.30'
+    implementation 'com.intellij:forms_rt:7.0.3'
+    implementation 'io.github.cdimascio:dotenv-java:3.2.0'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'ua.cn.stu.main.DatabaseExplorer'
+    }
+}
