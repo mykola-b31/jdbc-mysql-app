@@ -2,6 +2,8 @@ package ua.cn.stu.main;
 
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import ua.cn.stu.domain.Product;
 import io.github.cdimascio.dotenv.Dotenv;
 
@@ -15,8 +17,9 @@ import java.util.List;
 
 public class DatabaseExplorer extends JFrame {
 
-    private static Connection connection = null;
+    //private static Connection connection = null;
     private static DefaultListModel<Product> productListModel;
+    private static DriverManagerDataSource dataSource;
 
     private JPanel contentPane;
     private JList<Product> dataList;
@@ -32,22 +35,19 @@ public class DatabaseExplorer extends JFrame {
         setTitle("Database Explorer");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setSize(600, 300);
+        setLocationRelativeTo(null);
         setVisible(true);
         addProduct.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                try {
-                    addProduct(connection, txtFldName.getText(), txtFldDescription.getText());
-                    List<Product> productList = getAllProducts(connection);
-                    productListModel.removeAllElements();
-                    for (Product product : productList) {
-                        productListModel.addElement(product);
-                    }
-                    txtFldName.setText("");
-                    txtFldDescription.setText("");
-                } catch (SQLException ex) {
-                    throw new RuntimeException(ex);
+                addProductJDBCTemplate(dataSource, txtFldName.getText(), txtFldDescription.getText());
+                List<Product> productList = getAllProductsJDBCTemplate(dataSource);
+                productListModel.removeAllElements();
+                for (Product product : productList) {
+                    productListModel.addElement(product);
                 }
+                txtFldName.setText("");
+                txtFldDescription.setText("");
             }
         });
     }
@@ -63,9 +63,9 @@ public class DatabaseExplorer extends JFrame {
             String user = dotenv.get("DB_USER");
             String password = dotenv.get("DB_PASSWORD");
 
-            connection = connectToDatabase(url, user, password);
+            dataSource = connectToDatabaseJDBCTemplate(url, user, password);
 
-            List<Product> productList = getAllProducts(connection);
+            List<Product> productList = getAllProductsJDBCTemplate(dataSource);
             productListModel.removeAllElements();
             for (Product product : productList) {
                 productListModel.addElement(product);
@@ -103,6 +103,26 @@ public class DatabaseExplorer extends JFrame {
         preparedStatement.setString(2, productDescription);
         preparedStatement.execute();
         preparedStatement.close();
+    }
+
+    private static DriverManagerDataSource connectToDatabaseJDBCTemplate (String url, String name, String password) throws ClassNotFoundException {
+        Class.forName("com.mysql.cj.jdbc.Driver");
+        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        dataSource.setDriverClassName("com.mysql.cj.jdbc.Driver");
+        dataSource.setUrl(url);
+        dataSource.setUsername(name);
+        dataSource.setPassword(password);
+        return dataSource;
+    }
+
+    private static List<Product> getAllProductsJDBCTemplate(DriverManagerDataSource dataSource) {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        return jdbcTemplate.query("select * from product", new ProductMapper());
+    }
+
+    private static void addProductJDBCTemplate(DriverManagerDataSource dataSource, String productName, String productDescription) {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate.update("insert into product(product_name, product_description) values (?, ?)", productName, productDescription);
     }
 
     {
