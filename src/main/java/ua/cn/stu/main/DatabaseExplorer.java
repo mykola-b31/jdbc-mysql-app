@@ -2,8 +2,12 @@ package ua.cn.stu.main;
 
 import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
+import com.intellij.uiDesigner.core.Spacer;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.DefaultTransactionDefinition;
 import ua.cn.stu.domain.Goods;
 import io.github.cdimascio.dotenv.Dotenv;
 import ua.cn.stu.domain.Supplier;
@@ -13,7 +17,6 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.math.BigDecimal;
-import java.sql.*;
 import java.util.List;
 
 public class DatabaseExplorer extends JFrame {
@@ -38,6 +41,10 @@ public class DatabaseExplorer extends JFrame {
     private JTextField txtFldGoodsQuantity;
     private JComboBox<Supplier> supplierComboBox;
     private JButton addGoodsButton;
+    private JComboBox<Goods> goodsComboBox;
+    private JComboBox<Supplier> newSupplierComboBox;
+    private JButton transferGoodsButton;
+    private JLabel lblCurrentSupplier;
 
     public DatabaseExplorer() {
         setContentPane(contentPane);
@@ -58,6 +65,23 @@ public class DatabaseExplorer extends JFrame {
             @Override
             public void actionPerformed(ActionEvent e) {
                 addGoods();
+            }
+        });
+        goodsComboBox.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                Goods selectedGoods = (Goods) goodsComboBox.getSelectedItem();
+                if (selectedGoods != null) {
+                    lblCurrentSupplier.setText(selectedGoods.getSupplierName());
+                    updateNewSupplierComboBox(selectedGoods.getSupplierId());
+                }
+            }
+        });
+
+        transferGoodsButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                performTransfer();
             }
         });
     }
@@ -105,7 +129,7 @@ public class DatabaseExplorer extends JFrame {
     private static List<Goods> getAllGoods() {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         String query = "select g.*, s.supplier_name from goods g " +
-                        "left join supplier s on g.supplier_id = s.supplier_id";
+                "left join supplier s on g.supplier_id = s.supplier_id";
         return jdbcTemplate.query(query, new GoodsMapper());
     }
 
@@ -180,6 +204,65 @@ public class DatabaseExplorer extends JFrame {
         }
     }
 
+    private void transferGoodsBetweenSuppliers(Long goodsId, Long oldSupplierId, Long newSupplierId) {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(dataSource);
+        TransactionStatus status = transactionManager.getTransaction(new DefaultTransactionDefinition());
+
+        try {
+            int count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM goods WHERE goods_id = ? AND supplier_id = ?",
+                    Integer.class, goodsId, oldSupplierId);
+
+            if (count == 0) {
+                throw new RuntimeException("Goods wasn`t found for this supplier");
+            }
+
+            int supplierCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM supplier WHERE supplier_id = ?",
+                    Integer.class, newSupplierId);
+
+            if (supplierCount == 0) {
+                throw new RuntimeException("New supplier wasn`t found");
+            }
+
+            int updateRows = jdbcTemplate.update(
+                    "UPDATE goods SET supplier_id = ? WHERE goods_id = ? AND supplier_id = ?",
+                    newSupplierId, goodsId, oldSupplierId);
+
+            if (updateRows == 0) {
+                throw new RuntimeException("Failed to update goods");
+            }
+
+            transactionManager.commit(status);
+
+        } catch (Exception e) {
+            transactionManager.rollback(status);
+        }
+    }
+
+    private void performTransfer() {
+        try {
+            Goods selectedGoods = (Goods) goodsComboBox.getSelectedItem();
+            Supplier newSupplier = (Supplier) newSupplierComboBox.getSelectedItem();
+
+            if (selectedGoods == null || newSupplier == null) {
+                JOptionPane.showMessageDialog(contentPane,
+                        "Choose goods and new supplier",
+                        "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            transferGoodsBetweenSuppliers(selectedGoods.getGoodsId(), selectedGoods.getSupplierId(), newSupplier.getSupplierId());
+
+            refreshData();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(contentPane,
+                    "Error during transfer: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void refreshData() {
         List<Supplier> suppliers = getAllSuppliers();
         supplierListModel.removeAllElements();
@@ -198,6 +281,23 @@ public class DatabaseExplorer extends JFrame {
         goodsListModel.removeAllElements();
         for (Goods goods : listGoods) {
             goodsListModel.addElement(goods);
+        }
+
+        if (goodsComboBox != null) {
+            goodsComboBox.removeAllItems();
+            for (Goods goods : listGoods) {
+                goodsComboBox.addItem(goods);
+            }
+        }
+    }
+
+    private void updateNewSupplierComboBox(Long currentSupplierId) {
+        newSupplierComboBox.removeAllItems();
+        List<Supplier> suppliers = getAllSuppliers();
+        for (Supplier supplier : suppliers) {
+            if (!supplier.getSupplierId().equals(currentSupplierId)) {
+                newSupplierComboBox.addItem(supplier);
+            }
         }
     }
 
@@ -287,6 +387,33 @@ public class DatabaseExplorer extends JFrame {
         addGoodsButton = new JButton();
         addGoodsButton.setText("Add Goods");
         panel4.add(addGoodsButton, new GridConstraints(8, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        final JPanel panel5 = new JPanel();
+        panel5.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
+        tabbedPane1.addTab("Transfer", panel5);
+        final JPanel panel6 = new JPanel();
+        panel6.setLayout(new GridLayoutManager(6, 3, new Insets(0, 7, 0, 7), -1, -1));
+        panel5.add(panel6, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
+        final JLabel label8 = new JLabel();
+        label8.setText("Goods for transfer");
+        panel6.add(label8, new GridConstraints(0, 0, 1, 3, GridConstraints.ANCHOR_SOUTHWEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        goodsComboBox = new JComboBox<Goods>();
+        panel6.add(goodsComboBox, new GridConstraints(1, 0, 1, 3, GridConstraints.ANCHOR_NORTHWEST, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        final JLabel label9 = new JLabel();
+        label9.setText("Current supplier:");
+        panel6.add(label9, new GridConstraints(2, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        final JLabel label10 = new JLabel();
+        label10.setText("New supplier");
+        panel6.add(label10, new GridConstraints(3, 0, 1, 3, GridConstraints.ANCHOR_SOUTHWEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        newSupplierComboBox = new JComboBox<Supplier>();
+        panel6.add(newSupplierComboBox, new GridConstraints(4, 0, 1, 3, GridConstraints.ANCHOR_NORTHWEST, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        transferGoodsButton = new JButton();
+        transferGoodsButton.setText("Transfer Goods");
+        panel6.add(transferGoodsButton, new GridConstraints(5, 0, 1, 3, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        lblCurrentSupplier = new JLabel();
+        lblCurrentSupplier.setText("Not Selected");
+        panel6.add(lblCurrentSupplier, new GridConstraints(2, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        final Spacer spacer1 = new Spacer();
+        panel6.add(spacer1, new GridConstraints(2, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_WANT_GROW, 1, null, null, null, 0, false));
     }
 
     /**

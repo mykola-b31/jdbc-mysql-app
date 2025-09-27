@@ -18,7 +18,7 @@ public class GoodsMapper implements RowMapper<Goods> {
         try {
             goods.setSupplierName(rs.getString("supplier_name"));
         } catch (SQLException e) {
-            goods.setSupplierName("Невідомо");
+            goods.setSupplierName("Unknown");
         }
         return goods;
     }
