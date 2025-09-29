@@ -210,20 +210,20 @@ public class DatabaseExplorer extends JFrame {
         TransactionStatus status = transactionManager.getTransaction(new DefaultTransactionDefinition());
 
         try {
-            int count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM goods WHERE goods_id = ? AND supplier_id = ?",
-                    Integer.class, goodsId, oldSupplierId);
+            Boolean goodsExists = jdbcTemplate.queryForObject(
+                    "SELECT EXISTS(SELECT 1 FROM goods WHERE goods_id = ? AND supplier_id = ?)",
+                    Boolean.class, goodsId, oldSupplierId);
 
-            if (count == 0) {
-                throw new RuntimeException("Goods wasn`t found for this supplier");
+            if (!goodsExists) {
+                throw new RuntimeException("Goods wasn't found for this supplier");
             }
 
-            int supplierCount = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM supplier WHERE supplier_id = ?",
-                    Integer.class, newSupplierId);
+            Boolean supplierExists = jdbcTemplate.queryForObject(
+                    "SELECT EXISTS(SELECT 1 FROM supplier WHERE supplier_id = ?)",
+                    Boolean.class, newSupplierId);
 
-            if (supplierCount == 0) {
-                throw new RuntimeException("New supplier wasn`t found");
+            if (!supplierExists) {
+                throw new RuntimeException("New supplier wasn't found");
             }
 
             int updateRows = jdbcTemplate.update(
